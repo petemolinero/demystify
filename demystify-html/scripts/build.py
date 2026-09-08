@@ -187,9 +187,62 @@ svg.connectors path.hot { opacity:1; stroke-width:2.25; }
 .coverage { border:1px solid var(--border); border-radius:8px; padding:12px 16px;
   color:var(--muted); font-size:14px; }
 @media (max-width: 900px) { .layout { flex-direction:column; } nav { position:static; width:auto; } }
+
+/* Feedback: select text, comment on it, copy all comments as a prompt. */
+::highlight(cm-mark) { background-color:rgba(255,196,0,.45); }
+::highlight(cm-mark-hot) { background-color:rgba(255,140,0,.6); }
+.cm-fab { position:absolute; z-index:40; display:none; background:var(--fg); color:var(--bg); border:0;
+  border-radius:6px; padding:4px 10px; font:600 12.5px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.25); }
+.cm-fab.show { display:block; }
+.cm-pop { position:absolute; z-index:41; display:none; width:320px; background:var(--bg); color:var(--fg);
+  border:1px solid var(--border); border-radius:8px; padding:10px; box-shadow:0 6px 24px rgba(0,0,0,.25); }
+.cm-pop.show { display:block; }
+.cm-pop blockquote { margin:0 0 8px; padding:4px 10px; border-left:3px solid var(--warn-border);
+  color:var(--muted); font-size:12.5px; line-height:1.4; max-height:72px; overflow:hidden; }
+.cm-pop textarea, .cm-item textarea { width:100%; min-height:64px; resize:vertical; font-family:inherit; font-size:13px; line-height:1.45;
+  border:1px solid var(--border); border-radius:6px; padding:6px 8px; background:var(--bg); color:var(--fg); }
+.cm-row { display:flex; gap:8px; justify-content:flex-end; margin-top:8px; align-items:center; }
+.cm-row .hint { margin-right:auto; color:var(--muted); font-size:11.5px; }
+.cm-b { border:1px solid var(--border); background:var(--file-bg); color:var(--fg); border-radius:6px;
+  padding:5px 11px; font:600 12.5px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; cursor:pointer; }
+.cm-b.primary { background:var(--note-border); border-color:var(--note-border); color:#fff; }
+.cm-b:disabled { opacity:.5; cursor:default; }
+.cm-dock { position:fixed; right:20px; bottom:20px; z-index:50; display:flex; flex-direction:column;
+  align-items:flex-end; gap:8px; font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+.cm-dock .cm-bar { display:flex; gap:8px; }
+.cm-dock .cm-b { padding:9px 14px; font-size:13.5px; box-shadow:0 2px 10px rgba(0,0,0,.2); }
+.cm-dock .badge { display:inline-block; min-width:18px; padding:0 5px; margin-left:6px; border-radius:9px;
+  background:var(--bg); color:var(--fg); font-size:11.5px; line-height:18px; text-align:center; }
+.cm-dock .cm-b.primary .badge { background:rgba(255,255,255,.25); color:#fff; }
+.cm-panel { display:none; width:min(420px, calc(100vw - 40px)); max-height:min(60vh, 560px); overflow:auto;
+  background:var(--bg); border:1px solid var(--border); border-radius:10px; box-shadow:0 8px 30px rgba(0,0,0,.3);
+  padding:10px; }
+.cm-panel.show { display:block; }
+.cm-panel .empty { color:var(--muted); padding:8px 4px; }
+.cm-item { border:1px solid var(--border); border-radius:8px; padding:8px 10px; margin-bottom:8px; }
+.cm-item .n { font-weight:700; color:var(--muted); font-size:12px; }
+.cm-item .ctx { color:var(--muted); font:11.5px/1.4 ui-monospace,Menlo,monospace; margin-left:6px; }
+.cm-item blockquote { margin:4px 0 6px; padding:2px 10px; border-left:3px solid var(--warn-border);
+  color:var(--muted); font-size:12.5px; line-height:1.4; cursor:pointer; white-space:pre-wrap; }
+.cm-item blockquote:hover { color:var(--fg); }
+.cm-item .cm-row { margin-top:6px; }
+.cm-item .del, .cm-foot .del { color:var(--muted); background:none; border:0; cursor:pointer; font-size:12px; padding:2px 4px; }
+.cm-item .del:hover, .cm-foot .del:hover { color:#c00; }
+.cm-panel .cm-foot { display:flex; justify-content:space-between; align-items:center; margin-top:4px;
+  color:var(--muted); font-size:12px; }
+.cm-toast { position:fixed; right:20px; bottom:80px; z-index:60; background:var(--fg); color:var(--bg);
+  padding:8px 14px; border-radius:8px; font-size:13px; opacity:0; transition:opacity .2s; pointer-events:none; }
+.cm-toast.show { opacity:1; }
+.cm-out { display:none; position:fixed; inset:10vh 15vw; z-index:70; background:var(--bg); color:var(--fg);
+  border:1px solid var(--border); border-radius:10px; padding:14px; box-shadow:0 10px 40px rgba(0,0,0,.4);
+  flex-direction:column; gap:10px; }
+.cm-out.show { display:flex; }
+.cm-out textarea { flex:1; width:100%; font:12.5px/1.5 ui-monospace,Menlo,monospace; border:1px solid var(--border);
+  border-radius:6px; padding:8px; background:var(--file-bg); color:var(--fg); resize:none; }
 """
 
-JS = """
+JS = r"""
 (function () {
   // Hash navigation breaks in sandboxed/blob previewers; scroll directly instead.
   document.querySelectorAll('nav a[href^="#"]').forEach(function (a) {
@@ -327,6 +380,264 @@ JS = """
   window.addEventListener('load', layoutAll);
   var t;
   window.addEventListener('resize', function () { clearTimeout(t); t = setTimeout(layoutAll, 120); });
+})();
+
+/* ---------- Feedback: highlight text, comment, copy prompt ---------- */
+(function () {
+  var main = document.querySelector('main');
+  if (!main) return;
+  var meta = document.querySelector('header .meta');
+  var storeKey = 'demystify-comments:' + document.title + ':' + (meta ? meta.textContent : '');
+  var comments = [];   // {id, quote, ctx, text, range|null}
+  var seq = 0;
+  var hasHL = typeof Highlight !== 'undefined' && CSS.highlights;
+  var hl = hasHL ? new Highlight() : null;
+  var hlHot = hasHL ? new Highlight() : null;
+  if (hasHL) { CSS.highlights.set('cm-mark', hl); CSS.highlights.set('cm-mark-hot', hlHot); }
+
+  function el(tag, cls, html) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (html != null) e.innerHTML = html;
+    return e;
+  }
+  function escapeHtml(t) {
+    return String(t).replace(/[&<>"]/g, function (c) {
+      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c];
+    });
+  }
+  function elementOf(node) { return node.nodeType === 1 ? node : node.parentNode; }
+
+  // UI pieces
+  var fab = el('button', 'cm-fab', 'Comment');
+  var pop = el('div', 'cm-pop');
+  pop.innerHTML = '<blockquote></blockquote><textarea placeholder="Your comment on the highlighted text…"></textarea>' +
+    '<div class="cm-row"><span class="hint">⌘/Ctrl+Enter to save</span>' +
+    '<button class="cm-b cancel">Cancel</button><button class="cm-b primary save">Save comment</button></div>';
+  var dock = el('div', 'cm-dock');
+  var panel = el('div', 'cm-panel');
+  var bar = el('div', 'cm-bar');
+  var listBtn = el('button', 'cm-b', 'Comments<span class="badge">0</span>');
+  var copyBtn = el('button', 'cm-b primary', 'Copy prompt<span class="badge">0</span>');
+  bar.appendChild(listBtn); bar.appendChild(copyBtn);
+  dock.appendChild(panel); dock.appendChild(bar);
+  var toast = el('div', 'cm-toast');
+  var out = el('div', 'cm-out');
+  out.innerHTML = '<div class="cm-row" style="margin:0"><span class="hint">Clipboard unavailable — select all and copy manually.</span>' +
+    '<button class="cm-b close">Close</button></div><textarea readonly></textarea>';
+  document.body.appendChild(fab); document.body.appendChild(pop); document.body.appendChild(dock);
+  document.body.appendChild(toast); document.body.appendChild(out);
+  out.querySelector('.close').addEventListener('click', function () { out.classList.remove('show'); });
+
+  var popQuote = pop.querySelector('blockquote'), popText = pop.querySelector('textarea');
+  var pending = null; // {range, quote, ctx}
+
+  function showToast(msg) {
+    toast.textContent = msg; toast.classList.add('show');
+    clearTimeout(showToast.t); showToast.t = setTimeout(function () { toast.classList.remove('show'); }, 1800);
+  }
+
+  function lineNo(tr) {
+    if (!tr) return '';
+    var nos = tr.querySelectorAll('td.no');
+    return (nos[1] && nos[1].textContent.trim()) || (nos[0] && nos[0].textContent.trim()) || '';
+  }
+
+  // Where is this selection? File + line for diff rows, otherwise the section title.
+  function contextOf(range) {
+    var node = elementOf(range.startContainer);
+    var diff = node.closest('.diff');
+    if (diff) {
+      var head = diff.querySelector('.filehead');
+      var file = head ? head.textContent.replace(/\s*\([^)]*\)\s*$/, '').trim() : '';
+      var a = lineNo(node.closest('tr'));
+      var b = lineNo(elementOf(range.endContainer).closest('tr')) || a;
+      var lineTxt = !a ? '' : (a === b ? ' line ' + a : ' lines ' + a + '-' + b);
+      return file + lineTxt;
+    }
+    var card = node.closest('.card');
+    if (card) {
+      var loc = card.querySelector('.loc');
+      return 'annotation' + (loc ? ' on ' + loc.textContent.trim() : '');
+    }
+    var sec = node.closest('.change');
+    if (sec) {
+      var h = sec.querySelector('h2');
+      var hint = h && h.querySelector('.hint');
+      var title = h ? (hint ? h.textContent.replace(hint.textContent, '') : h.textContent).trim() : '';
+      return 'section "' + title + '"';
+    }
+    if (node.closest('.intro')) return 'intro';
+    if (node.closest('header')) return 'page header';
+    return '';
+  }
+
+  function currentSelection() {
+    var sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
+    var range = sel.getRangeAt(0);
+    var text = sel.toString().split('\n').map(function (l) { return l.replace(/\s+$/, ''); }).join('\n').trim();
+    if (!text) return null;
+    var anc = elementOf(range.commonAncestorContainer);
+    if (!main.contains(anc)) return null;
+    return {range: range, text: text};
+  }
+
+  function placeNear(node, rect) {
+    var x = Math.min(window.innerWidth - node.offsetWidth - 12, Math.max(8, rect.left + window.scrollX));
+    node.style.left = x + 'px';
+    node.style.top = (rect.bottom + window.scrollY + 6) + 'px';
+  }
+
+  document.addEventListener('mouseup', function (e) {
+    if (fab.contains(e.target) || pop.contains(e.target) || dock.contains(e.target) || out.contains(e.target)) return;
+    setTimeout(function () {
+      var cur = currentSelection();
+      if (!cur) { fab.classList.remove('show'); return; }
+      fab.classList.add('show');
+      placeNear(fab, cur.range.getBoundingClientRect());
+    }, 0);
+  });
+  document.addEventListener('mousedown', function (e) {
+    if (fab.contains(e.target) || pop.contains(e.target)) return;
+    fab.classList.remove('show');
+    closePop();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { closePop(); fab.classList.remove('show'); out.classList.remove('show'); }
+  });
+
+  function closePop() { pop.classList.remove('show'); pending = null; }
+
+  fab.addEventListener('mousedown', function (e) { e.preventDefault(); });
+  fab.addEventListener('click', function () {
+    var cur = currentSelection();
+    if (!cur) return;
+    pending = {range: cur.range.cloneRange(), quote: cur.text, ctx: contextOf(cur.range)};
+    popQuote.textContent = cur.text.length > 220 ? cur.text.slice(0, 220) + '…' : cur.text;
+    popText.value = '';
+    pop.classList.add('show');
+    placeNear(pop, cur.range.getBoundingClientRect());
+    fab.classList.remove('show');
+    popText.focus();
+  });
+  pop.querySelector('.cancel').addEventListener('click', closePop);
+  pop.querySelector('.save').addEventListener('click', saveComment);
+  popText.addEventListener('keydown', function (e) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); saveComment(); }
+  });
+
+  function saveComment() {
+    if (!pending) return;
+    var text = popText.value.trim();
+    if (!text) { popText.focus(); return; }
+    comments.push({id: ++seq, quote: pending.quote, ctx: pending.ctx, text: text, range: pending.range});
+    if (hasHL) hl.add(pending.range);
+    closePop();
+    try { window.getSelection().removeAllRanges(); } catch (_) {}
+    persist(); render();
+    showToast('Comment ' + comments.length + ' saved');
+  }
+
+  function removeComment(id) {
+    comments = comments.filter(function (c) {
+      if (c.id !== id) return true;
+      if (hasHL && c.range) { hl.delete(c.range); hlHot.delete(c.range); }
+      return false;
+    });
+    persist(); render();
+  }
+
+  function render() {
+    var n = comments.length;
+    listBtn.querySelector('.badge').textContent = n;
+    copyBtn.querySelector('.badge').textContent = n;
+    copyBtn.disabled = n === 0;
+    panel.innerHTML = '';
+    if (!n) {
+      panel.appendChild(el('div', 'empty', 'Select any text on the page and click <strong>Comment</strong>. ' +
+        'Your comments collect here; <strong>Copy prompt</strong> turns them into one numbered prompt.'));
+      return;
+    }
+    comments.forEach(function (c, i) {
+      var item = el('div', 'cm-item');
+      item.innerHTML = '<span class="n">' + (i + 1) + '.</span>' +
+        (c.ctx ? '<span class="ctx">' + escapeHtml(c.ctx) + '</span>' : '') +
+        '<blockquote title="Scroll to this text">' +
+        escapeHtml(c.quote.length > 160 ? c.quote.slice(0, 160) + '…' : c.quote) + '</blockquote>' +
+        '<textarea></textarea><div class="cm-row"><button class="del">Delete</button></div>';
+      var ta = item.querySelector('textarea');
+      ta.value = c.text;
+      ta.addEventListener('input', function () { c.text = ta.value; persist(); });
+      item.querySelector('.del').addEventListener('click', function () { removeComment(c.id); });
+      item.querySelector('blockquote').addEventListener('click', function () {
+        if (!c.range) return;
+        var d = elementOf(c.range.startContainer).closest('details');
+        if (d && !d.open) d.open = true;
+        var r = c.range.getBoundingClientRect();
+        window.scrollTo({top: r.top + window.scrollY - window.innerHeight / 3, behavior: 'smooth'});
+      });
+      item.addEventListener('mouseenter', function () { if (hasHL && c.range) hlHot.add(c.range); });
+      item.addEventListener('mouseleave', function () { if (hasHL && c.range) hlHot.delete(c.range); });
+      panel.appendChild(item);
+    });
+    var foot = el('div', 'cm-foot');
+    foot.innerHTML = '<span>' + n + ' comment' + (n === 1 ? '' : 's') + '</span><button class="del">Clear all</button>';
+    foot.querySelector('.del').addEventListener('click', function () {
+      if (!confirm('Delete all ' + n + ' comments?')) return;
+      if (hasHL) { hl.clear(); hlHot.clear(); }
+      comments = []; persist(); render();
+    });
+    panel.appendChild(foot);
+  }
+
+  listBtn.addEventListener('click', function () { panel.classList.toggle('show'); });
+
+  function buildPrompt() {
+    var lines = ["Work through this feedback one item at a time until I'm satisfied:", ''];
+    comments.forEach(function (c, i) {
+      lines.push((i + 1) + '.' + (c.ctx ? ' (' + c.ctx + ')' : ''));
+      c.quote.split('\n').forEach(function (q) { lines.push('   > ' + q); });
+      lines.push('');
+      c.text.split('\n').forEach(function (t) { lines.push('   ' + t); });
+      lines.push('');
+    });
+    return lines.join('\n').replace(/\n+$/, '\n');
+  }
+  window.__demystifyPrompt = buildPrompt; // for debugging / automation
+
+  copyBtn.addEventListener('click', function () {
+    if (!comments.length) return;
+    var text = buildPrompt();
+    function done() { showToast('Prompt copied (' + comments.length + ' items)'); }
+    function fallback() {
+      var ok = false;
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select(); ok = document.execCommand('copy'); document.body.removeChild(ta);
+      } catch (_) { ok = false; }
+      if (ok) done();
+      else { out.querySelector('textarea').value = text; out.classList.add('show'); out.querySelector('textarea').select(); }
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, fallback);
+    } else fallback();
+  });
+
+  // Persist text only (ranges can't be serialized); restored comments keep working but lose their highlight.
+  function persist() {
+    try {
+      localStorage.setItem(storeKey, JSON.stringify(comments.map(function (c) {
+        return {quote: c.quote, ctx: c.ctx, text: c.text};
+      })));
+    } catch (_) {}
+  }
+  try {
+    var saved = JSON.parse(localStorage.getItem(storeKey) || '[]');
+    saved.forEach(function (c) { comments.push({id: ++seq, quote: c.quote, ctx: c.ctx, text: c.text, range: null}); });
+  } catch (_) {}
+  render();
 })();
 """
 

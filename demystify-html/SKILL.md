@@ -5,7 +5,7 @@ description: Generate a single scrollable HTML page that shows the complete anno
 
 # Demystify HTML
 
-Produce one self-contained HTML file: the full diff of a branch/PR against its base rendered as standard git diffs, with plain-language annotation cards in the side rails pointing (via connector lines) at the exact lines they explain. Hovering a card highlights its lines and vice versa; on narrow screens cards stack inline above their diff block. The bundled script renders the page and enforces 100% coverage — it fails and lists any hunk you haven't annotated. Your job is the understanding and the writing; the script's job is the HTML.
+Produce one self-contained HTML file: the full diff of a branch/PR against its base rendered as standard git diffs, with plain-language annotation cards in the side rails pointing (via connector lines) at the exact lines they explain. Hovering a card highlights its lines and vice versa; on narrow screens cards stack inline above their diff block. The page also has a built-in feedback loop: the reader can select any text (code, annotation, or prose), click **Comment**, and keep going; a sticky **Copy prompt** button in the bottom-right turns all comments into one numbered prompt (quoted text, then the comment) that they can paste back to an agent. The bundled script renders the page and enforces 100% coverage — it fails and lists any hunk you haven't annotated. Your job is the understanding and the writing; the script's job is the HTML.
 
 ## Step 1: Resolve the target and base
 
@@ -91,4 +91,5 @@ python3 <skill_dir>/scripts/build.py --repo <repo> --base origin/<base> --target
 
 - The script exits 1 and lists missing keys if any hunk is unannotated — fix the JSON and rerun until it reports full coverage (the page footer shows "N/N hunks annotated"). Never ship with `--allow-unannotated`.
 - Also fix any "nonexistent hunk key" warnings (usually a typo'd path or index).
-- Send the finished HTML to the user with SendUserFile (`display: "render"`), with a one-line caption naming the branch/PR and the number of changes covered. Do not commit the file to the repo.
+- Send the finished HTML to the user with SendUserFile (`display: "render"`), with a one-line caption naming the branch/PR and the number of changes covered, plus a reminder that they can select text, click Comment, and use Copy prompt to send feedback back. Do not commit the file to the repo.
+- When the user pastes such a prompt back ("Work through this feedback one item at a time…"), each numbered item quotes page text and gives a location like `src/foo.php line 12` or `section "…"`. Address them in order: fix the code, the annotation text, or the section explanation as appropriate, rebuild the page, and resend it.
