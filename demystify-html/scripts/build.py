@@ -112,12 +112,19 @@ CSS = """
   --note-bg:#f0f5ff; --note-border:#3b6fd4; --warn-bg:#fff8c5; --warn-border:#d4a72c;
   --lineno:#8c959f; --link:#0969da; --card-shadow:0 1px 4px rgba(31,35,40,.1);
   --tgt-tint:rgba(59,111,212,.14); --tgt-hot:rgba(59,111,212,.28); --warn-tint:rgba(212,167,44,.18); }
-@media (prefers-color-scheme: dark) { :root { --bg:#0d1117; --fg:#e6edf3; --muted:#8b949e;
+/* Dark theme: follows the OS unless the host sets data-theme (Claude artifacts do). */
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0d1117; --fg:#e6edf3; --muted:#8b949e;
   --border:#30363d; --file-bg:#161b22; --add-bg:#12261e; --add-strong:#1f4429;
   --del-bg:#2d1214; --del-strong:#542426; --note-bg:#111c31; --note-border:#4c7fe0;
   --warn-bg:#2b2611; --warn-border:#b08800; --lineno:#6e7681; --link:#4c9aff;
   --card-shadow:0 1px 4px rgba(0,0,0,.4);
   --tgt-tint:rgba(76,127,224,.16); --tgt-hot:rgba(76,127,224,.32); --warn-tint:rgba(176,136,0,.2); } }
+:root[data-theme="dark"] { --bg:#0d1117; --fg:#e6edf3; --muted:#8b949e;
+  --border:#30363d; --file-bg:#161b22; --add-bg:#12261e; --add-strong:#1f4429;
+  --del-bg:#2d1214; --del-strong:#542426; --note-bg:#111c31; --note-border:#4c7fe0;
+  --warn-bg:#2b2611; --warn-border:#b08800; --lineno:#6e7681; --link:#4c9aff;
+  --card-shadow:0 1px 4px rgba(0,0,0,.4);
+  --tgt-tint:rgba(76,127,224,.16); --tgt-hot:rgba(76,127,224,.32); --warn-tint:rgba(176,136,0,.2); }
 * { box-sizing:border-box; }
 body { margin:0; background:var(--bg); color:var(--fg);
   font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
