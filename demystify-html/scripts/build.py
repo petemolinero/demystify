@@ -360,10 +360,13 @@ JS = r"""
       if (!rows.length) return;
       var cr = c.getBoundingClientRect();
       var tr = rows[0].getBoundingClientRect();
+      // Rows can be wider than their scroll box (long lines, white-space:pre), so anchor
+      // the x to the visible diff block, not the row itself.
+      var box = (rows[0].closest('.diff') || rows[0]).getBoundingClientRect();
       var left = c.dataset.side === 'left';
       var x1 = (left ? cr.right : cr.left) - wr.left;
       var y1 = cr.top + Math.min(16, cr.height / 2) - wr.top;
-      var x2 = (left ? tr.left - 5 : tr.right + 5) - wr.left;
+      var x2 = (left ? box.left - 5 : box.right + 5) - wr.left;
       var y2 = tr.top + tr.height / 2 - wr.top;
       var bend = Math.max(18, Math.abs(x2 - x1) * 0.4) * (left ? 1 : -1);
       var p = document.createElementNS(NS, 'path');
