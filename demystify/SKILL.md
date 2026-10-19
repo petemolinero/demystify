@@ -1,75 +1,96 @@
 ---
 name: demystify
-description: Walk the user through every change in a branch or PR compared to its base branch, one logical change at a time, in plain layman's terms. For each change it explains how the code worked before, what the desired change was, how it was accomplished, and why each edit was necessary, pausing after each explanation for comprehension checks and follow-up questions. Use when the user wants a branch or PR explained, demystified, or walked through, asks "what does this PR/branch actually do", or wants to understand someone else's (or an agent's) changes without reading the diff themselves.
+description: Generate a single scrollable HTML page that shows the complete annotated diff of a branch or PR versus its base branch - every hunk rendered as a standard git diff, grouped into logical changes, with plain-language annotation cards in the left and right margins connected by lines to the exact code lines they describe. Use when the user wants a branch or PR explained, demystified, or walked through, asks "what does this PR/branch actually do", wants an annotated diff page, or says "demystify".
 ---
 
 # Demystify
 
-Interactive, plain-English walkthrough of everything a branch or PR changes relative to its base. The user is not assumed to know the codebase, the framework, or advanced programming jargon. The deliverable is understanding, not a summary dump: never explain more than one logical change between comprehension checks.
+Produce one self-contained HTML file, published as a Claude artifact: the full diff of a branch/PR against its base rendered as standard git diffs, with plain-language annotation cards in the side rails pointing (via connector lines) at the exact lines they explain. Hovering a card highlights its lines and vice versa; on narrow screens cards stack inline above their diff block. The page also has a built-in feedback loop: the reader can select any text (code, annotation, or prose), click **Comment**, and keep going; a sticky **Copy prompt** button in the bottom-right turns all comments into one numbered prompt (quoted text, then the comment) that they can paste back to an agent. The bundled script renders the page and enforces 100% coverage — it fails and lists any hunk you haven't annotated. Your job is the understanding and the writing; the script's job is the HTML.
 
 ## Step 1: Resolve the target and base
 
-- If the user gave a PR number/URL: `gh pr view <ref> --json baseRefName,headRefName,title,body,url`. Base = `baseRefName`, target = `headRefName`. Immediately post the PR as a markdown link in chat — both the PR itself and its diff view (`<url>/files`) — so the user can open the diff alongside the conversation and follow along as you walk through it.
-- If the user gave a branch name: base = the repo's main branch (`git remote show origin | grep 'HEAD branch'` or the obvious default like `main`).
-- If the user gave nothing, use the current branch; if the current branch IS the main branch, ask which branch or PR to demystify.
-- Fetch first (`git fetch origin`) so the comparison is current.
+- PR number/URL: `gh pr view <ref> --json baseRefName,headRefName,title,body,url`. Base = `baseRefName`, target = `headRefName`. Keep the URL for `--pr-url`.
+- Branch name: base = the repo's main branch (`git remote show origin | grep 'HEAD branch'`, or the obvious default like `main`).
+- Nothing given: use the current branch; if it IS the main branch, ask which branch/PR to demystify.
+- `git fetch origin` first so the comparison is current.
 
-## Step 2: Study the full diff privately
+## Step 2: Enumerate the hunks
 
-Do this work silently; don't dump it on the user.
+Run the script once with an empty annotations file to get the authoritative hunk list:
 
-1. Get the change list: `git diff --stat origin/<base>...<target>` and the full diff `git diff origin/<base>...<target>`. Use the three-dot form so you only see the branch's own changes.
-2. Read `git log origin/<base>..<target> --oneline` and the PR title/body/linked ticket if available, to learn the *intent* behind the changes.
-3. For each changed file, read enough surrounding pre-change code (`git show origin/<base>:<file>`) to genuinely understand how it worked BEFORE. You cannot explain "before vs after" from the diff hunks alone.
-4. Group the changes into an ordered list of **logical changes** (a feature, a fix, a refactor step) — not one entry per file. Related edits across files that serve one purpose are one item.
-5. **Find the narrative.** State, in a sentence or two, the problem this branch exists to solve. Then ask: if someone sat down to solve that problem, what sub-problems would they have to work through, and in what order? Those sub-problems are your logical changes. Order them the way a person would think through the problem (the thing you must have first, then what builds on it, then the loose ends it creates), not by file path or diff order. Each item should be the next step in a chain of reasoning: "we did X, but that alone leaves us with problem Y, so next we…".
-6. Build a **coverage ledger**: every hunk in the diff (file + line range) assigned to exactly one logical change. Nothing may be left unassigned — if a hunk fits nowhere, it becomes its own item (even trivial ones like a version bump or whitespace fix, which can be covered in one sentence). Keep this ledger and mark items off as you explain them.
+```bash
+echo '{"sections": [], "hunks": {}}' > /tmp/ann.json
+python3 <skill_dir>/scripts/build.py --repo <repo> --base origin/<base> --target <target> \
+  --annotations /tmp/ann.json --out /tmp/preview.html --allow-unannotated
+```
 
-## Step 3: Present the roadmap
+The stderr "MISSING annotations" list is every hunk key you must cover, in the form `path/to/file#<hunk-index>` (0-based per file; binary/rename-only files get a single pseudo-hunk `#0`).
 
-Give the user a short plain-English overview before diving in. This is the "here's the problem, here's the plan" beat of the story:
+## Step 3: Understand the changes
 
-- One or two sentences on the problem the branch/PR solves and why it matters.
-- The plan as a numbered list of the logical changes you'll walk through, phrased as steps toward solving that problem ("to get there we need to X, then Y, then Z"), one short line each.
+- Read the full diff (`git diff origin/<base>...<target>`), the commit log, and the PR title/body for intent.
+- For anything non-obvious, read the pre-change code (`git show origin/<base>:<file>`) so "before" explanations are grounded, not guessed from hunks.
+- Group hunks into ordered **logical changes** (a feature, a fix, a refactor step — not one per file). Trivial leftovers (version bumps, whitespace) get their own small section such as "Housekeeping".
+- **Tests go in their own collapsed section at the bottom.** Every hunk in a test file (`tests/`, `__tests__/`, `*.test.*`, `*.spec.*`, `*Test.php`, fixtures/snapshots/factories used only by tests) belongs to a single section with `"collapsed": true`, titled "Tests" or similar. Never mix test hunks into the narrative sections; instead, when a narrative section's behavior is covered by a test, mention that in its explanation in one clause ("the Tests section at the bottom checks this for both plan types"). The script forces collapsed sections to the bottom regardless of where they sit in the list.
+- **Find the narrative before you write anything.** Work out, in one or two sentences, what problem this PR exists to solve. Then ask: if someone sat down to solve that problem, what sub-problems would they have to work through, and in what order? Those sub-problems are your sections. Order them the way a person would think through the problem (the thing you must have first, then what builds on it, then the loose ends it creates), not by file path or by the order hunks appear in the diff. Each section should feel like the next step in a chain of reasoning: "we did X, but that alone leaves us with problem Y, so next we…".
 
-Then start with change #1 — no need to ask permission to begin.
+## Step 4: Write the annotations JSON
 
-## Step 4: Walk through each logical change
+Work in the scratchpad directory. Shape:
 
-Narrate each item as the next step in solving the problem, not as an isolated change. Open by placing it in the story ("First up, X…", "With X in place, the next problem is Y…", "Finally, Z, so we don't end up with <such-and-such>…"). Vary the wording; keep the shape. Then explain in this order, always in layman's terms:
+```json
+{
+  "title": "Short page title (PR title or branch purpose)",
+  "subtitle": "One plain-English sentence on what this branch/PR is for",
+  "intro": "<p>The problem this PR solves and why it matters, then the plan: 'to solve this we need to do X, Y, and Z'. One short paragraph naming each step so the reader knows the shape of the story before reading it.</p>",
+  "sections": [
+    {"id": "sec-1", "title": "Plain-English change title",
+     "explanation": "<p>Where we are in the story ('First up, X…' / 'With X in place, the next problem is Y…'), how things worked before, what we needed instead and why, how this group of edits gets us there, and what it sets up for the next section. Layman's terms; define any unavoidable jargon inline.</p>"},
+    {"id": "tests", "title": "Tests", "collapsed": true,
+     "explanation": "<p>One short paragraph: what behaviors the tests pin down, in plain English. The section renders closed with a click-to-expand heading and always sits last.</p>"}
+  ],
+  "hunks": {
+    "src/foo.php#0": {
+      "section": "sec-1",
+      "annotations": [
+        {"note": "What these lines do and why, in 1-3 plain sentences.", "new": 123, "count": 3, "side": "right"},
+        {"note": "Note about a deleted line.", "old": 45}
+      ]
+    }
+  }
+}
+```
 
-1. **How it worked before** — what the old code did, described as behavior ("when a visitor clicked X, the site did Y"), not as code structure. Show the relevant old code (from `git show origin/<base>:<file>`) in a fenced snippet and narrate what it says.
-2. **What we wanted instead** — the desired functionality or fix, and why the old behavior was a problem.
-3. **How the change accomplishes it** — the approach taken, mechanically but simply. Show the new code in a fenced snippet (or a small before/after pair for edits) and walk through what it does. Analogies are welcome when they clarify.
-4. **Why each edit was necessary** — connect every hunk in this group to the goal ("the test file changed because...", "this config line was needed so that..."), showing the code for each. No hunk in the group goes unexplained or unshown.
-5. **What this sets up** — one sentence on what this step makes possible, or what new problem it leaves for the next step to solve. That hand-off is what makes the walkthrough read as a thought process instead of a list.
+Annotation anchoring (each annotation becomes a margin card with a connector line to its code line):
 
-Motivate, don't just describe: every step answers "why did we need this?" in terms of the problem ("without this, the form would submit twice"), not the code ("this adds a guard"). If a step exists only to fix a problem an earlier step introduced, say so plainly; that's the most useful part of the story.
+- `new`: line number in the NEW file (use for added/context lines) — read it straight off the `+` side of the hunk header math, or from the rendered preview's line-number column.
+- `old`: line number in the OLD file (use for deleted lines).
+- Omit both to anchor to the hunk's first changed line. The script warns if a given number isn't in that hunk (and falls back to the first change) — treat those warnings as errors and fix them.
+- `count`: how many consecutive rendered lines the note covers (highlight span, default 1).
+- `side`: `left` or `right` rail; omit to auto-alternate. Put related notes on opposite sides when they'd otherwise crowd.
+- Test hunks still need real annotations (coverage is enforced for them too), but keep each note to one sentence saying what behavior that test asserts.
 
-Style rules:
+Rules for the writing:
 
-- Layman's terms throughout. Introduce any unavoidable technical term with a one-line plain definition the first time it appears.
-- Spell the company "Medbridge" (lowercase b) in all your prose, even where the code, PR title, or ticket writes "MedBridge". Leave identifiers inside code snippets exactly as they appear.
-- Short paragraphs. Always show the actual code you're describing — never describe a change in prose alone. Trim snippets to the relevant lines (with `...` for elided parts) and always narrate what the code says in plain English.
-- Reference files as clickable links (e.g. [foo.ts](src/foo.ts:42)) so the user can jump in.
+- **Tell it as a narrative, not a changelog.** The page should read like someone walking the reader through how they would think about the problem: "To pull this off we need to do X, Y, and Z. First up, X: here's why it's needed and how we did it. With X in place we can tackle Y… Finally, Z, so that we don't end up with <such-and-such problem>." Don't reuse that wording verbatim every time; do keep the shape: problem, plan, then each step motivated by the one before it. A reader who only reads the intro plus the section explanations should understand the whole PR and why each step exists.
+- **Layman's terms everywhere.** Describe behavior ("when a visitor clicks X, the site now does Y"), not code structure. Define any unavoidable technical term the first time it appears.
+- **Spell the company "Medbridge"** (lowercase b) everywhere in the title, intro, sections, and notes, even where the code, PR title, or ticket writes "MedBridge". Leave identifiers inside `<code>` exactly as they appear in the code.
+- **The intro** states the problem and lays out the plan (the sections, in order, in one sentence each). **Section explanations** each pick up where the previous one left off: why this step is next, before / desired / how / why, and what it hands off to the next step. A short paragraph or two. Simple HTML (`<p>`, `<strong>`, `<code>`) is allowed.
+- **Motivate, don't just describe.** Every step should answer "why did we need this?" in terms of the problem, not the code: "without this, the form would submit twice", not "this adds a guard". If a step exists only to avoid a problem a previous step introduced, say so explicitly; that's the most useful part of the story.
+- **Anchor notes to the line that matters** — the note sits beside the code, so point it at the specific line(s) it discusses, not just the top of the hunk. A big hunk with several interesting spots deserves several annotations.
+- **Each note is specific to its lines** — what these exact lines change and why the edit was necessary. Never a generic "part of the above"; say what THIS piece contributes to the step its section is about.
+- Every key from Step 2's missing list must appear in `hunks` with at least one annotation, assigned to a real section id. `{"note": "..."}` on a hunk is shorthand for one annotation anchored to its first change — fine for trivial hunks (lockfiles, version bumps).
 
-## Step 5: Comprehension check after EVERY explanation
+## Step 5: Build, verify, deliver
 
-After each logical change, stop and use AskUserQuestion (multiple choice):
+```bash
+python3 <skill_dir>/scripts/build.py --repo <repo> --base origin/<base> --target <target> \
+  --annotations <scratchpad>/annotations.json --out <scratchpad>/demystified-<branch>.html \
+  --pr-url <url-if-pr>
+```
 
-- Question: "Did that explanation make sense?"
-- Options: "Yes, makes sense — continue" (first), "Mostly, but I have a follow-up question", "No — explain it again more simply".
-
-Handling answers:
-
-- **Continue** → move to the next logical change.
-- **Follow-up** → answer the question (in the same plain style; go read more code if needed). Then ask again with AskUserQuestion: "Ready to continue, or more questions?" with options "Continue to the next change", "Another follow-up question". Loop until they choose continue.
-- **Explain again** → re-explain the same change more simply, with a different angle or analogy, then re-ask the comprehension check.
-
-Never explain two changes back-to-back without a check in between, and never skip the check on the last change.
-
-## Step 6: Verify coverage, then wrap up
-
-Before the recap, audit the coverage ledger against the actual diff (`git diff --stat origin/<base>...<target>`): every file and every hunk must have been shown and explained in one of the walkthrough items. If anything was missed, walk through it now (with its own comprehension check) — 100% of the code changes must be covered before wrapping up.
-
-After the final change is understood, close with a 3–5 sentence recap of the whole branch/PR in plain English: what it does now that it didn't before, and anything the user should watch for (risks, follow-ups, things not covered by the branch). Offer to answer any remaining questions.
+- The script exits 1 and lists missing keys if any hunk is unannotated — fix the JSON and rerun until it reports full coverage (the page footer shows "N/N hunks annotated"). Never ship with `--allow-unannotated`.
+- Also fix any "nonexistent hunk key" warnings (usually a typo'd path or index).
+- **Publish the page as a Claude artifact** (the default delivery). Call the Artifact tool with `file_path` = the built HTML, `icon: "diff"`, and a one-sentence `description` naming the branch/PR. Do not load the `artifact-design` skill or hand-edit the page first: the script's output already satisfies the artifact page contract (short `<title>`, color tokens on `:root` with `data-theme` dark-mode guards, explicit body background, no external scripts, phone-width layout). If this is a rebuild of a page you published earlier in the conversation, publish to the same `file_path` so it updates in place at the same URL. Then give the user the artifact link with one line naming the branch/PR and the number of changes covered, plus a reminder that they can select text, click Comment, and use Copy prompt to send feedback back.
+- If the Artifact tool is not available in the session, fall back to SendUserFile (`display: "render"`) with the same caption. Never commit the file to the repo either way.
+- When the user pastes such a prompt back ("Work through this feedback one item at a time…"), each numbered item quotes page text and gives a location like `src/foo.php line 12` or `section "…"`. Address them in order: fix the code, the annotation text, or the section explanation as appropriate, rebuild the page, and resend it.
